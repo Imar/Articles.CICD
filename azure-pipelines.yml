@@ -1,0 +1,60 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+- master
+
+pool: 
+   name: Default
+   demands:
+    - agent.name -equals YourBuildMachine
+
+variables:
+  buildConfiguration: 'Release'
+
+steps:
+- task: NuGetToolInstaller@1
+- task: UseDotNet@2
+  displayName: 'Install .Net Core SDK'
+  inputs:
+    version: 5.0.x
+    performMultiLevelLookup: true
+    includePreviewVersions: true # Required for preview versions
+
+- task: VisualStudioTestPlatformInstaller@1
+  displayName: 'Visual Studio Test Platform Installer'
+  inputs:
+    versionSelector: latestStable
+
+- script: dotnet build --configuration $(buildConfiguration)
+  displayName: 'dotnet build $(buildConfiguration)'
+
+- task: VSTest@2
+  inputs:
+    testSelector: 'testAssemblies'
+    vsTestVersion: 'toolsInstaller'
+    testAssemblyVer2: |
+      **\*tests.unit*.dll
+      !**\*TestAdapter.dll
+      !**\obj\**
+      !**\ref\**
+    searchFolder: '$(System.DefaultWorkingDirectory)'
+
+- powershell: |
+   dotnet tool update --global dotnet-ef
+   dotnet ef migrations script --output $(Build.ArtifactStagingDirectory)\SQL\EFMigrations.sql --startup-project Applications\ContinuousIntegrationAndDeployment.Web --project Applications\ContinuousIntegrationAndDeployment.Data.EF --context PeopleContext  --idempotent
+
+- task: DotNetCoreCLI@2
+  inputs:
+    command: publish
+    publishWebProjects: True
+    arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory) --self-contained true --runtime win-x64'
+    zipAfterPublish: True
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathtoPublish: '$(Build.ArtifactStagingDirectory)' 
+    artifactName: 'SiteSource'
+
